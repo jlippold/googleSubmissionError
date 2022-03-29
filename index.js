@@ -8,6 +8,8 @@ var secret = process.env.CLIENT_SECRET;
 var accessToken = process.env.ACCESS_TOKEN;
 var refreshToken = process.env.REFRESH_TOKEN;
 var expiryDate = process.env.EXPIRY_DATE;
+var assignments = require("./assignments");
+
 var courseId = '388349836029';
 
 const scopes = [
@@ -27,33 +29,37 @@ const scopes = [
 
 
 function init() {
+    
     createGoogleClient(function (err, client) {
         if (err) return console.error(err);
         let classroom = google.classroom({ version: 'v1', auth: client });
-        let nextPageToken = false;
-        async.until(() => nextPageToken === undefined, (nextPage) => {
-            let options = {
-                courseId,
-                courseWorkId: '-',
-                pageSize: 500,
-            };
-            if ((typeof nextPageToken === 'string' || nextPageToken instanceof String)) {
-                options.pageToken = nextPageToken;
-            }
-            classroom.courses.courseWork.studentSubmissions.list(options, (err, googleResponse) => {
-                if (err) return nextPage(err);
-                if (googleResponse.data && googleResponse.data.studentSubmissions) {
-                    console.log("Retrieved page from google");
-                    nextPage();
-                } else {
-                    console.log("End of stream");
-                    nextPageToken = undefined; // no data
-                    nextPage();
+        async.eachOfLimit(assignments, 3, function(courseWorkId, index, nextAssignment) {
+            console.log(`Starting ${courseWorkId}`);
+            let nextPageToken = false;
+            async.until(() => nextPageToken === undefined, (nextPage) => {
+                let options = { courseId, courseWorkId };
+                if ((typeof nextPageToken === 'string' || nextPageToken instanceof String)) {
+                    options.pageToken = nextPageToken;
                 }
-            });
+                classroom.courses.courseWork.studentSubmissions.list(options, (err, googleResponse) => {
+                    if (err) return nextPage(err);
+                    if (googleResponse.data && googleResponse.data.studentSubmissions) {
+                        if (googleResponse.data.hasOwnProperty('nextPageToken')) {
+                            nextPageToken = googleResponse.data.nextPageToken;
+                        } else {
+                            nextPageToken = undefined;
+                        }
+                        nextPage();
+                    } else {
+                        //console.log("End of items");
+                        nextPageToken = undefined; // no data
+                        nextPage();
+                    }
+                });
+            }, nextAssignment);
         }, function(err) {
-            if (err) console.error(err);
-            console.log("Finished");
+            if (err) return console.error(err);
+            console.log("fin");
         });
     });
 }
